@@ -33,6 +33,142 @@ The script generates files in `./eeg_output/`:
 - `eeg_summary.csv` - Summary statistics and band powers
 - `eeg_analysis.png` - Comprehensive visualization plots
 
+## Frequency Control Parameters
+
+### 🎵 **Direct Frequency Control (Most Important!)**
+
+The primary way to control EEG frequencies is through rhythm modulation parameters:
+
+```python
+# Alpha rhythm (8-13 Hz) - DOMINANT
+alpha_freq = 10                    # Alpha frequency (Hz)
+alpha_amplitude = 3                # Alpha rhythm strength
+
+# Theta rhythm (4-8 Hz)
+theta_freq = 6                     # Theta frequency (Hz)  
+theta_amplitude = 1.5              # Theta rhythm strength
+
+# Applied in code as:
+modulation = alpha_amplitude * sin(2π * alpha_freq * t)
+```
+
+### **Frequency Band Recipes:**
+
+#### 🎯 **Strong Alpha Rhythm (8-12 Hz)**
+```python
+alpha_freq = 10          # Keep in alpha range
+alpha_amplitude = 5      # Increase strength (from 3 to 5)
+theta_amplitude = 0.5    # Reduce competing theta
+```
+
+#### 🚀 **Beta Rhythm Dominance (13-30 Hz)**
+```python
+alpha_freq = 20          # Move to beta range
+alpha_amplitude = 4      # Increase amplitude
+theta_amplitude = 0.5    # Reduce low frequencies
+neurons.I_ext = 10 + 4 * np.random.randn()  # Higher excitation
+```
+
+#### 🧘 **Theta Rhythm Dominance (4-8 Hz)**
+```python
+alpha_freq = 6           # Move to theta range
+theta_freq = 5           # Additional theta component
+theta_amplitude = 3      # Increase theta amplitude
+alpha_amplitude = 1      # Reduce alpha
+neurons.I_ext = 6 + 2 * np.random.randn()  # Lower excitation
+```
+
+#### ⚡ **Gamma Activity (30-80 Hz)**
+```python
+# Add high-frequency modulation
+@network_operation(dt=1*ms)
+def gamma_modulation():
+    t = float(defaultclock.t / second)
+    gamma_freq = 40      # Gamma frequency
+    modulation = 2 * np.sin(2 * np.pi * gamma_freq * t)
+    neurons.I_ext[:N_exc] += modulation
+
+# Plus fast neurons
+neurons.a[:N_exc] = 0.04     # Very fast recovery
+neurons.I_ext = 12 + 5 * np.random.randn()  # High excitation
+```
+
+### **Neuron Speed Parameters (Affect Natural Frequencies)**
+
+```python
+# Faster neurons → higher frequencies
+neurons.a[:N_exc] = 0.03     # Increase from 0.02 (faster recovery)
+neurons.b[:N_exc] = 0.25     # Increase from 0.2 (higher sensitivity)
+
+# Slower neurons → lower frequencies
+neurons.a[:N_exc] = 0.01     # Decrease (slower recovery)
+neurons.b[:N_exc] = 0.15     # Decrease (lower sensitivity)
+```
+
+### **Network Synchronization (Affects Rhythm Clarity)**
+
+```python
+# Higher synchronization → clearer rhythms
+syn_exc.connect(p=0.25)      # Increase from 0.15 (more connections)
+syn_exc.w = 1.2              # Increase weights (from 0.8)
+
+# Lower synchronization → more high frequencies
+syn_exc.connect(p=0.08)      # Fewer connections
+syn_exc.w = 0.5              # Lower weights
+```
+
+### **External Drive (Shifts Frequency Bands)**
+
+```python
+# Higher drive → higher frequencies (beta/gamma)
+neurons.I_ext = 12 + 4 * np.random.randn()   # Increase from 8
+
+# Lower drive → lower frequencies (alpha/theta)
+neurons.I_ext = 5 + 2 * np.random.randn()    # Decrease to 5
+```
+
+## Frequency Band Reference
+
+| **Rhythm** | **Frequency** | **Primary Parameter** | **Additional Settings** |
+|------------|---------------|----------------------|------------------------|
+| **Delta** | 0.5-4 Hz | `alpha_freq = 2` | Low `I_ext`, slow neurons |
+| **Theta** | 4-8 Hz | `alpha_freq = 6` | Moderate `I_ext = 6` |
+| **Alpha** | 8-13 Hz | `alpha_freq = 10` | Balanced `I_ext = 8` |
+| **Beta** | 13-30 Hz | `alpha_freq = 20` | High `I_ext = 10-12` |
+| **Gamma** | 30-100 Hz | Separate modulation | Very high `I_ext = 15+` |
+
+## Advanced Frequency Control
+
+### **Multiple Simultaneous Rhythms:**
+```python
+@network_operation(dt=1*ms)
+def multi_rhythm_modulation():
+    t = float(defaultclock.t / second)
+    
+    # Alpha (10 Hz) - primary
+    alpha_mod = 3 * np.sin(2 * np.pi * 10 * t)
+    
+    # Theta (6 Hz) - background
+    theta_mod = 1 * np.sin(2 * np.pi * 6 * t)
+    
+    # Beta (20 Hz) - weak
+    beta_mod = 0.5 * np.sin(2 * np.pi * 20 * t)
+    
+    total_mod = alpha_mod + theta_mod + beta_mod
+    neurons.I_ext[:N_exc] += total_mod
+```
+
+### **Dynamic Frequency Changes:**
+```python
+@network_operation(dt=100*ms)
+def dynamic_frequency():
+    global alpha_freq
+    t = float(defaultclock.t / second)
+    
+    # Frequency varies over time (8-12 Hz)
+    alpha_freq = 10 + 2 * np.sin(2 * np.pi * 0.1 * t)  # Slow changes
+```
+
 ## Key Parameters That Control EEG Signal
 
 ### 🧠 **Network Structure**
@@ -237,6 +373,15 @@ scaling_factor = 250000   # Decrease for higher amplitude
 scaling_factor = 1000000  # Increase for lower amplitude
 ```
 
+### **Problem: Wrong frequency dominance**
+```python
+# For specific frequency bands, use the recipes above
+# Most important: change alpha_freq to desired frequency
+alpha_freq = 8    # For theta-alpha border
+alpha_freq = 12   # For alpha-beta border  
+alpha_freq = 25   # For beta rhythm
+```
+
 ## Advanced Modifications
 
 ### **Create Beta Rhythm Dominance:**
@@ -279,7 +424,7 @@ def variable_modulation():
 ## File Structure
 
 ```
-/Users/stanrevko/projects/exmodel/
+/
 ├── 01_izhikevich_model.py     # Main script
 ├── README.md                  # This documentation
 └── eeg_output/               # Generated output files
