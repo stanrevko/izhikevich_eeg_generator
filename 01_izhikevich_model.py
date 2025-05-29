@@ -77,11 +77,11 @@ def create_izhikevich_network(N_total=1000, exc_ratio=0.8):
     neurons.v = -65 + 10 * np.random.randn(N_total)
     neurons.u = neurons.b * neurons.v
     
-    # Set external currents (thalamic input simulation)
-    neurons.I_ext = 5 + 2 * np.random.randn(N_total)
+    # Set external currents (increased for more realistic spiking)
+    neurons.I_ext = 8 + 3 * np.random.randn(N_total)  # Increased driving current
     
-    # Add noise for realistic dynamics
-    neurons.I_noise = 0.5 * np.random.randn(N_total)
+    # Add noise for realistic dynamics (increased)
+    neurons.I_noise = 2.0 * np.random.randn(N_total)  # More noise for variability
     
     # Create synaptic connections
     synapses = create_network_connections(neurons, N_exc, N_inh)
@@ -93,19 +93,19 @@ def create_network_connections(neurons, N_exc, N_inh):
     
     N_total = len(neurons)
     
-    # Excitatory to all connections
+    # Excitatory to all connections (increased connectivity)
     syn_exc = Synapses(neurons[:N_exc], neurons,
                        'w : 1',
                        on_pre='I_syn_post += w')
-    syn_exc.connect(p=0.1)  # 10% connectivity
-    syn_exc.w = 0.5 + 0.2 * np.random.randn(len(syn_exc))
+    syn_exc.connect(p=0.15)  # Increased from 10% to 15%
+    syn_exc.w = 0.8 + 0.3 * np.random.randn(len(syn_exc))  # Stronger weights
     
     # Inhibitory to all connections  
     syn_inh = Synapses(neurons[N_exc:], neurons,
                        'w : 1', 
                        on_pre='I_syn_post -= w')  # Inhibitory (negative)
-    syn_inh.connect(p=0.2)  # 20% connectivity for inhibition
-    syn_inh.w = 1.0 + 0.3 * np.random.randn(len(syn_inh))
+    syn_inh.connect(p=0.25)  # Increased inhibitory connectivity
+    syn_inh.w = 1.2 + 0.4 * np.random.randn(len(syn_inh))  # Balanced inhibition
     
     return [syn_exc, syn_inh]
 
@@ -140,12 +140,17 @@ def generate_eeg_signal(neurons, N_exc, duration=60.0, dt=0.1*ms, fs=1000):
     state_mon = StateMonitor(neurons, 'v', record=range(N_exc), dt=1*ms)
     spike_mon = SpikeMonitor(neurons)
     
+    # Add periodic noise updates to maintain activity
+    @network_operation(dt=10*ms)
+    def update_noise():
+        neurons.I_noise = 2.0 * np.random.randn(len(neurons))
+    
     # Add periodic modulation to simulate alpha rhythm
     @network_operation(dt=1*ms)
     def alpha_modulation():
         t = float(defaultclock.t / second)
         alpha_freq = 10  # Hz
-        modulation = 2 * np.sin(2 * np.pi * alpha_freq * t)
+        modulation = 3 * np.sin(2 * np.pi * alpha_freq * t)  # Increased amplitude
         neurons.I_ext[:N_exc] += modulation
     
     # Add slower oscillations (theta)
@@ -153,13 +158,31 @@ def generate_eeg_signal(neurons, N_exc, duration=60.0, dt=0.1*ms, fs=1000):
     def theta_modulation():
         t = float(defaultclock.t / second)
         theta_freq = 6  # Hz
-        modulation = 1 * np.sin(2 * np.pi * theta_freq * t)
+        modulation = 1.5 * np.sin(2 * np.pi * theta_freq * t)  # Increased amplitude
         neurons.I_ext[:N_exc] += modulation
     
-    # Run simulation
+    # Run simulation with progress monitoring
     print("Running neural simulation...")
     defaultclock.dt = dt
-    run(duration * second, report='text')
+    
+    # Run in chunks to monitor spiking activity
+    chunk_duration = 10  # seconds
+    total_chunks = int(duration / chunk_duration)
+    N_neurons = len(neurons)  # Get total number of neurons
+    
+    for chunk in range(total_chunks):
+        print(f"  Simulating chunk {chunk+1}/{total_chunks} ({chunk*chunk_duration}-{(chunk+1)*chunk_duration}s)")
+        run(chunk_duration * second, report='stdout')
+        
+        # Check spiking activity
+        if len(spike_mon.t) > 0:
+            current_spikes = len(spike_mon.t)
+            avg_rate = current_spikes / ((chunk+1) * chunk_duration * N_neurons)
+            print(f"    Spikes so far: {current_spikes:,}, Avg rate: {avg_rate*1000:.1f} Hz/neuron")
+        else:
+            print("    WARNING: No spikes detected yet!")
+    
+    print(f"Simulation complete. Total spikes: {len(spike_mon.t):,}")
     
     # Convert membrane potentials to EEG signal
     print("Converting neural activity to EEG...")
@@ -233,18 +256,43 @@ def analyze_eeg_spectrum(times, eeg_signal, fs=1000):
 
 def save_results(times, eeg_signal, spike_mon, freqs, psd, band_powers, 
                 peak_alpha_freq, output_dir='./eeg_output'):
-    """Save all results to files."""
+    """Save all results to files in specified formats."""
     
     os.makedirs(output_dir, exist_ok=True)
     
-    # Save EEG signal to CSV
+    # Save EEG signal in the requested format (hh:mm:ss.mmm format with Fcz electrode)
+    eeg_formatted_file = os.path.join(output_dir, 'eeg_signal_fcz.txt')
+    
+    # Downsample to 500 Hz (every 2ms) to match the requested format
+    downsample_factor = 2
+    times_ds = times[::downsample_factor]
+    eeg_signal_ds = eeg_signal[::downsample_factor]
+    
+    with open(eeg_formatted_file, 'w') as f:
+        # Write header
+        f.write("hh:mm:ss.mmm\tFcz\n")
+        
+        # Write data in requested format
+        for i, (t, eeg_val) in enumerate(zip(times_ds, eeg_signal_ds)):
+            # Convert time to hh:mm:ss.mmm format
+            hours = int(t // 3600)
+            minutes = int((t % 3600) // 60)
+            seconds = int(t % 60)
+            milliseconds = int((t % 1) * 1000)
+            
+            time_str = f"{hours}:{minutes}:{seconds}.{milliseconds:03d}"
+            f.write(f"{time_str}\t{eeg_val:.6f}\n")
+    
+    print(f"EEG signal (Fcz format) saved to: {eeg_formatted_file}")
+    
+    # Also save original CSV format for compatibility
     eeg_df = pd.DataFrame({
         'time_s': times,
         'eeg_signal_uv': eeg_signal
     })
-    eeg_file = os.path.join(output_dir, 'eeg_signal.csv')
-    eeg_df.to_csv(eeg_file, index=False)
-    print(f"EEG signal saved to: {eeg_file}")
+    eeg_csv_file = os.path.join(output_dir, 'eeg_signal.csv')
+    eeg_df.to_csv(eeg_csv_file, index=False)
+    print(f"EEG signal (CSV format) saved to: {eeg_csv_file}")
     
     # Save spectral analysis
     spectral_df = pd.DataFrame({
@@ -259,7 +307,8 @@ def save_results(times, eeg_signal, spike_mon, freqs, psd, band_powers,
     summary = {
         'peak_alpha_frequency_hz': peak_alpha_freq,
         'signal_duration_s': times[-1],
-        'sampling_rate_hz': len(times) / times[-1],
+        'sampling_rate_original_hz': len(times) / times[-1],
+        'sampling_rate_fcz_format_hz': len(times_ds) / times_ds[-1],
         'signal_mean_uv': np.mean(eeg_signal),
         'signal_std_uv': np.std(eeg_signal),
         'signal_range_uv': np.ptp(eeg_signal),
@@ -273,10 +322,10 @@ def save_results(times, eeg_signal, spike_mon, freqs, psd, band_powers,
     summary_df.to_csv(summary_file, index=False)
     print(f"Summary statistics saved to: {summary_file}")
     
-    return eeg_file, spectral_file, summary_file
+    return eeg_formatted_file, eeg_csv_file, spectral_file, summary_file
 
 def plot_results(times, eeg_signal, freqs, psd, band_powers, peak_alpha_freq,
-                spike_mon, output_dir='./eeg_output'):
+                spike_mon, N_neurons, output_dir='./eeg_output'):
     """Create comprehensive visualization of results."""
     
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
@@ -316,17 +365,32 @@ def plot_results(times, eeg_signal, freqs, psd, band_powers, peak_alpha_freq,
         axes[0, 2].text(bar.get_x() + bar.get_width()/2., height,
                        f'{power:.3f}', ha='center', va='bottom', fontsize=9)
     
-    # Spike raster plot (first 1000 spikes for visibility)
+    # Spike raster plot (show more spikes and better time window)
     if len(spike_mon.t) > 0:
-        max_spikes = min(5000, len(spike_mon.t))
-        spike_times = spike_mon.t[:max_spikes] / second
-        spike_neurons = spike_mon.i[:max_spikes]
+        # Show spikes from first 5 seconds for better visibility
+        time_window = 5.0  # seconds
+        time_mask = spike_mon.t <= time_window * second
         
-        axes[1, 0].scatter(spike_times, spike_neurons, s=0.5, alpha=0.6, c='black')
-        axes[1, 0].set_title(f'Neural Spike Raster (First {max_spikes} spikes)')
-        axes[1, 0].set_xlabel('Time (s)')
-        axes[1, 0].set_ylabel('Neuron Index')
-        axes[1, 0].set_xlim(0, 10)
+        if np.any(time_mask):
+            spike_times = spike_mon.t[time_mask] / second
+            spike_neurons = spike_mon.i[time_mask]
+            
+            print(f"Plotting {len(spike_times):,} spikes in first {time_window}s")
+            
+            axes[1, 0].scatter(spike_times, spike_neurons, s=1, alpha=0.8, c='black')
+            axes[1, 0].set_title(f'Neural Spike Raster (First {time_window}s, {len(spike_times):,} spikes)')
+            axes[1, 0].set_xlabel('Time (s)')
+            axes[1, 0].set_ylabel('Neuron Index')
+            axes[1, 0].set_xlim(0, time_window)
+            axes[1, 0].set_ylim(0, N_neurons-1)
+        else:
+            axes[1, 0].text(0.5, 0.5, f'No spikes in first {time_window}s', 
+                           ha='center', va='center', transform=axes[1, 0].transAxes)
+            axes[1, 0].set_title('Neural Spike Raster - NO ACTIVITY')
+    else:
+        axes[1, 0].text(0.5, 0.5, 'No spikes recorded!', 
+                       ha='center', va='center', transform=axes[1, 0].transAxes)
+        axes[1, 0].set_title('Neural Spike Raster - NO SPIKES')
     
     # Spectrogram
     f, t, Sxx = signal.spectrogram(eeg_signal[:10000], fs=1000, nperseg=256, noverlap=128)
@@ -347,7 +411,7 @@ def plot_results(times, eeg_signal, freqs, psd, band_powers, peak_alpha_freq,
     Range: {np.ptp(eeg_signal):.2f} µV
     Peak Alpha: {peak_alpha_freq:.1f} Hz
     Total Spikes: {len(spike_mon.t):,}
-    Avg Rate: {len(spike_mon.t)/(times[-1]*1000):.1f} Hz/neuron
+    Avg Rate: {len(spike_mon.t)/(times[-1]*N_neurons):.1f} Hz/neuron
     """
     
     axes[1, 2].text(0.1, 0.9, stats_text, transform=axes[1, 2].transAxes,
@@ -394,13 +458,13 @@ def main():
     freqs, psd, band_powers, peak_alpha_freq = analyze_eeg_spectrum(times, eeg_signal)
     
     # Save results
-    eeg_file, spectral_file, summary_file = save_results(
+    eeg_fcz_file, eeg_csv_file, spectral_file, summary_file = save_results(
         times, eeg_signal, spike_mon, freqs, psd, band_powers, 
         peak_alpha_freq, OUTPUT_DIR)
     
     # Create plots
     plot_results(times, eeg_signal, freqs, psd, band_powers, peak_alpha_freq,
-                spike_mon, OUTPUT_DIR)
+                spike_mon, N_TOTAL, OUTPUT_DIR)
     
     # Performance summary
     elapsed_time = time.time() - start_time
@@ -410,12 +474,15 @@ def main():
     print("=" * 60)
     print(f"Simulation time: {elapsed_time:.1f} seconds")
     print(f"Generated {len(eeg_signal):,} EEG samples ({times[-1]:.1f} s recording)")
+    print(f"Original sampling rate: 1000 Hz")
+    print(f"Fcz format sampling rate: 500 Hz (downsampled)")
     print(f"Peak alpha frequency: {peak_alpha_freq:.1f} Hz")
     print(f"Alpha power: {band_powers['alpha']:.4f}")
     print(f"Total spikes recorded: {len(spike_mon.t):,}")
     print()
     print("Output files:")
-    print(f"  EEG data: {eeg_file}")
+    print(f"  EEG data (Fcz format): {eeg_fcz_file}")
+    print(f"  EEG data (CSV format): {eeg_csv_file}")
     print(f"  Spectrum: {spectral_file}")
     print(f"  Summary: {summary_file}")
     print(f"  Plot: {os.path.join(OUTPUT_DIR, 'eeg_analysis.png')}")
