@@ -21,6 +21,8 @@ This script creates a network of 1000 neurons and generates realistic EEG-like s
 - **Proper spectral characteristics**
 - **Multiple output formats**
 
+![eeg_analysis](https://github.com/user-attachments/assets/0956e2da-c787-439c-bf56-5ace3ca986c0)
+
 ## Output Files
 
 The script generates files in `./eeg_output/`:
@@ -42,7 +44,8 @@ DURATION = 60.0       # Recording duration (seconds)
 ```
 
 **Effects:**
-- **More neurons** → smoother, more stable EEG
+- **More neurons** → smoother, more stable EEG[Uploading eeg_signal_fcz.txt…]()
+
 - **Higher excitatory ratio** → more excitable network
 - **Longer duration** → better spectral resolution
 
