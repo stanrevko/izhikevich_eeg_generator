@@ -12,6 +12,8 @@ This project implements a computational model of EEG generation based on a netwo
 The core of this application is the `IzhikevichEEGGenerator` module, which simulates a cortical column consisting of:
 - **800 Excitatory Neurons**: Modeled as Regular Spiking (RS) neurons.
 - **200 Inhibitory Neurons**: Modeled as Fast Spiking (FS) neurons.
+  
+![Screen Recording 2025-11-26 at 22 13 45](https://github.com/user-attachments/assets/490d17b7-89af-481f-8e50-dc9f7cdb3bbd)
 
 The neurons are connected in an all-to-all topology with specific synaptic weights and delays. The "EEG" signal is derived from the sum of membrane potentials of all excitatory neurons, processed through a **1-50 Hz bandpass filter** to simulate the field potential recorded by an EEG electrode.
 
